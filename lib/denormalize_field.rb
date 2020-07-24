@@ -1,6 +1,4 @@
-require 'mongo_mapper'
-
-module MongoMapper::Denormalization
+module DenormalizeField
   if defined?(ActiveModel::Validations::ClassMethods::VALID_OPTIONS_FOR_VALIDATE)
     VALID_OPTIONS_FOR_VALIDATE = ActiveModel::Validations::ClassMethods::VALID_OPTIONS_FOR_VALIDATE
   else
@@ -8,7 +6,7 @@ module MongoMapper::Denormalization
   end
 
   def self.included(mod)
-    mod.extend(MongoMapper::Denormalization::ClassMethods)
+    mod.extend(DenormalizeField::ClassMethods)
   end
 
   module ClassMethods
@@ -52,39 +50,39 @@ module MongoMapper::Denormalization
 
   private
 
-    def denormalize_on_update(association, field, is_association, target_field_code)
+    def denormalize_on_update(association_name, field, is_association, target_field_code)
       if is_association
         field = :"#{field}_id"
         target_field_code = :"#{target_field_code}_id"
       end
 
-      klass = self.associations[association].klass
+      association_name = association_name.to_sym
 
-      collection_name = self.collection_name
-      reverse_denormalization_method_name = "_denormalize__#{collection_name}__#{association}__#{field}".gsub(/[^A-Za-z0-9_]/, '_')
+      association_klass = self.reflect_on_all_associations.detect { |association| association.name.to_sym == association_name.to_sym }
+      raise "Couldn't find association: #{association_klass}" if !association_klass
+      klass = association_klass.klass
 
-      klass.class_eval(<<-CODE, __FILE__, __LINE__)
+      collection_name = self.table_name
+      self_class = self
+      reverse_denormalization_method_name = "_denormalize__#{collection_name}__#{association_name}__#{field}".gsub(/[^A-Za-z0-9_]/, '_')
+
+      klass.class_eval(<<-CODE, __FILE__, __LINE__+1)
         after_update :#{reverse_denormalization_method_name}
 
         def #{reverse_denormalization_method_name}
           return true unless self.respond_to?(:#{field}) && self.respond_to?(:#{field}_changed?)
 
-          if self.#{field}_changed?
-            db = MongoMapper.database
-
+          if self.saved_change_to_#{field}?
             new_value = self.#{field}
-            new_value = new_value.utc if new_value.is_a?(Time) && new_value.respond_to?(:utc)
 
             find_query = {
-              :#{association}_id => self.id
+              :#{association_name}_id => self.id,
             }
             update_query = {
-              '$set' => {
-                :#{target_field_code} => new_value
-              }
+              :#{target_field_code} => new_value,
             }
 
-            db["#{collection_name}"].update(find_query, update_query, :multi => true)
+            #{self_class.name}.where(find_query).update_all(update_query)
           end
 
           true
@@ -98,7 +96,7 @@ module MongoMapper::Denormalization
       validation_method_name = :"denormalize_#{association}_#{field}"
 
       # denormalize the field
-      self.class_eval <<-CODE, __FILE__, __LINE__
+      self.class_eval(<<-CODE, __FILE__, __LINE__+1)
         #{validation_method} :#{validation_method_name}, #{validation_method_params.inspect}
 
         def #{validation_method_name}

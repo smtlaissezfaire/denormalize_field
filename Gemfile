@@ -1,11 +1,11 @@
 source 'https://rubygems.org'
 
-gem 'mongo_mapper', '0.12.0'
+gem 'activerecord', ">= 6.0"
 
 group :test do
+  gem 'pg'
   gem 'rspec'
-  gem 'bson_ext'
-  gem 'debugger'
+  gem 'byebug'
   gem 'activesupport'
   gem 'tzinfo'
 end
