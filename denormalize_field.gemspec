@@ -1,5 +1,3 @@
-require 'date'
-
 Gem::Specification.new do |s|
   s.name        = 'denormalize_field'
   s.version     = '0.0.1'
